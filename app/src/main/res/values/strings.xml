@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="remote_button_service_label">CouchFrame: Netflix button</string>
+    <string name="remote_button_service_description">Makes the Netflix button on the remote open CouchFrame. It only watches for that one button.</string>
+</resources>
