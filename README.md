@@ -17,7 +17,7 @@ Acesse **[a versão mais recente](../../releases/latest)** e, em **Assets**, bai
 
 O APK é uma **versão de teste**, sem o serviço de Acessibilidade. A WebView bloqueia acesso a arquivos locais, cookies de terceiros, pop-ups, HTTP e mixed content, e restringe a navegação principal ao domínio `framextv.pro`. Isso reduz riscos, mas não garante segurança ou compatibilidade com todos os players.
 
-A assinatura de depuração pode ser diferente em cada compilação. Pode ser necessário desinstalar a versão anterior antes de instalar outra (o que apaga dados do app). Nunca desative o Play Protect para prosseguir.
+O APK é compilado sem depuração, mas é assinado com uma chave de teste que pode ser diferente em cada compilação. Pode ser necessário desinstalar a versão anterior antes de instalar outra (o que apaga dados do app). Nunca desative o Play Protect para prosseguir.
 
 ## Navegação
 

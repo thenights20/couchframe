@@ -3,7 +3,6 @@ package com.couchframe.tv
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.Intent
-import android.content.pm.ApplicationInfo
 import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Build
@@ -94,9 +93,7 @@ class MainActivity : Activity() {
 
     @SuppressLint("SetJavaScriptEnabled")
     private fun setupWebView() {
-        if (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0) {
-            WebView.setWebContentsDebuggingEnabled(true)
-        }
+        // Nunca permita inspeção remota das páginas ou dos players.
         with(web.settings) {
             javaScriptEnabled = true // Required by the web interface.
             domStorageEnabled = true
