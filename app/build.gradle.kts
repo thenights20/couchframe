@@ -11,7 +11,7 @@ android {
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.couchframe.tv"
+        applicationId = "dev.couchframe.private.tv"
         minSdk = 23
         targetSdk = 35
         versionCode = 1

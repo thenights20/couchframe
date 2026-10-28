@@ -1,0 +1,72 @@
+name: Build TV test APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check restrictive manifest and bridge
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q 'android:allowBackup="false"' app/src/main/AndroidManifest.xml
+          grep -q 'android:usesCleartextTraffic="false"' app/src/main/AndroidManifest.xml
+          ! grep -q 'BIND_ACCESSIBILITY_SERVICE' app/src/main/AndroidManifest.xml
+          test ! -f app/src/main/java/com/couchframe/tv/RemoteButtonService.kt
+          ! grep -q 'addJavascriptInterface(' app/src/main/java/com/couchframe/tv/MainActivity.kt
+          ! grep -q 'window.TVApp' app/src/main/assets/tv.js
+          grep -q 'https://framextv.pro/' app/src/main/java/com/couchframe/tv/MainActivity.kt
+          grep -q 'setAcceptThirdPartyCookies(web, false)' app/src/main/java/com/couchframe/tv/MainActivity.kt
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android 35
+        run: sdkmanager --install 'platforms;android-35' 'build-tools;35.0.0'
+
+      - name: Cache Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build debug APK
+        run: |
+          chmod +x gradlew
+          ./gradlew :app:assembleDebug --no-daemon --stacktrace
+
+      - name: Inspect APK and calculate hash
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=app/build/outputs/apk/debug/app-debug.apk
+          test -s "$APK"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump xmltree "$APK" AndroidManifest.xml > apk-manifest.txt
+          ! grep -q 'BIND_ACCESSIBILITY_SERVICE' apk-manifest.txt
+          ! grep -q 'android.accessibilityservice' apk-manifest.txt
+          sha256sum "$APK" > apk-sha256.txt
+
+      - name: Upload test APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: couchframe-tv-test-apk
+          path: |
+            app/build/outputs/apk/debug/app-debug.apk
+            apk-sha256.txt
+            apk-manifest.txt
+          retention-days: 7
+          if-no-files-found: error

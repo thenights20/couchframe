@@ -1,3 +1,5 @@
+> **Versão personalizada para Google TV — não oficial.** Foi removido o serviço de Acessibilidade e a ponte JavaScript global. A página inicial é `https://framextv.pro/`. A reprodução depende da segurança e disponibilidade de sites terceiros e pode não funcionar com cookies ou HTTP bloqueados. **Não desative o Play Protect.** Para compilar e baixar um APK de teste, abra **Actions → Build TV test APK → última execução → Artifacts**. Consulte [SECURITY.md](SECURITY.md).
+
 <p align="center"><img src="docs/banner-wide.png" alt="CouchFrame" width="640"></p>
 
 # CouchFrame

@@ -6,14 +6,21 @@
   window.__tvInit = true;
 
   var TOP = window === window.top;
-  var APP = window.TVApp || null;
+  // A native bridge is only available through TVNative on the exact trusted HTTPS origin.
   var ARROWS = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right', Up: 'up', Down: 'down', Left: 'left', Right: 'right' };
   var CODES = { 38: 'up', 40: 'down', 37: 'left', 39: 'right' };
 
   function dirOf(e) { return ARROWS[e.key] || CODES[e.keyCode]; }
   function isOk(e) { return e.key === 'Enter' || e.keyCode === 13; }
   function stop(e) { e.preventDefault(); e.stopImmediatePropagation(); }
-  function call(fn, arg) { try { if (APP && APP[fn]) return APP[fn](arg); } catch (x) {} }
+  function call(fn, arg) {
+    try {
+      if (fn === 'remoteOk') return TOP && (Date.now() - (window.__lastNativeOk || 0) < 800);
+      if (!TOP || !window.TVNative) return;
+      if (fn === 'showKeyboard') window.TVNative.postMessage('keyboard');
+      else if (fn === 'playing') window.TVNative.postMessage(arg ? 'playing:1' : 'playing:0');
+    } catch (x) {}
+  }
   function area(r) { return r.width * r.height; }
   function screenArea() { return innerWidth * innerHeight; }
 
@@ -163,8 +170,9 @@
     var v = bestVideo();
     var on = !!(v && !v.paused && !v.ended);
     call('playing', on);
+    if (!TOP) window.top.postMessage({ tvPlaying: on }, '*');
     if (!on) return;
-    window.top.postMessage({ tvPlaying: true }, '*');
+    if (TOP) window.top.postMessage({ tvPlaying: true }, '*');
     // Watching now: put focus on the picture so OK pauses and ←/→ seek (↑/↓ reach the buttons).
     var s = surfaceEl(), cur = document.activeElement;
     if (s && s.getAttribute('data-tvf') === 'player' && cur !== s && document.hasFocus() && modalScope() === document) focusEl(s, true);
@@ -571,7 +579,10 @@
   window.addEventListener('message', function (ev) {
     var d = ev.data;
     if (!d || typeof d !== 'object') return;
-    if (d.tvMedia) { media(d.tvMedia); relay(d); }
+    // Ignore messages not received from the embedding parent or a known child frame.
+    if (TOP && ev.source !== window && !childFrame(ev.source)) return;
+    if (!TOP && ev.source !== window.parent && !childFrame(ev.source)) return;
+    if (d.tvMedia && !TOP && ev.source === window.parent) { media(d.tvMedia); relay(d); }
     if (d.tvKey && !TOP && ev.source === window.parent) handleKey(d.tvKey, d.rep, null);
     if (TOP && 'tvMenu' in d) menuFrame = d.tvMenu ? ev.source : (menuFrame === ev.source ? null : menuFrame);
     if (d.tvBack && !TOP) {
@@ -585,7 +596,10 @@
       if (TOP) userMoved = true;
       if (!move(d.tvNav, false, from)) bubble(d.tvNav);
     }
-    if (TOP && d.tvPlaying) onPlaying();
+    if (TOP && typeof d.tvPlaying === 'boolean' && childFrame(ev.source)) {
+      call('playing', d.tvPlaying);
+      if (d.tvPlaying) onPlaying();
+    }
   });
 
   // Focus just entered this frame: start on the video.

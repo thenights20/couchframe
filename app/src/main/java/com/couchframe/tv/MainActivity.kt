@@ -19,13 +19,13 @@ import android.view.WindowInsetsController
 import android.view.WindowManager
 import android.view.inputmethod.InputMethodManager
 import android.webkit.CookieManager
-import android.webkit.JavascriptInterface
 import android.webkit.PermissionRequest
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
+import android.webkit.WebSettings
 import android.webkit.WebViewClient
 import android.widget.FrameLayout
 import android.widget.Toast
@@ -33,11 +33,11 @@ import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
 import java.io.ByteArrayInputStream
 
-private const val HOME = "https://framextv.cc/"
+private const val HOME = "https://framextv.pro/"
 private const val BG = 0xFF09090B.toInt()
 
 /** The site and its own mirrors; main-frame navigation anywhere else (ad redirects) is blocked. */
-private val OWN_HOSTS = listOf("framextv.cc", "framextv.xyz", "framextv.tech")
+private val OWN_HOSTS = listOf("framextv.pro")
 
 /** Common pop-under / ad networks that embed players load. Matched as host suffixes. */
 private val AD_HOSTS = listOf(
@@ -65,8 +65,6 @@ class MainActivity : Activity() {
     private var customCallback: WebChromeClient.CustomViewCallback? = null
     private var lastBackAt = 0L
 
-    /** When the remote's OK button last went through the activity; lets the page tell it apart from the on-screen keyboard's Enter. */
-    @Volatile private var lastRemoteOkAt = 0L
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -97,8 +95,14 @@ class MainActivity : Activity() {
             WebView.setWebContentsDebuggingEnabled(true)
         }
         with(web.settings) {
-            javaScriptEnabled = true
+            javaScriptEnabled = true // Required by the web interface.
             domStorageEnabled = true
+            allowFileAccess = false
+            allowContentAccess = false
+            allowFileAccessFromFileURLs = false
+            allowUniversalAccessFromFileURLs = false
+            mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) safeBrowsingEnabled = true
             mediaPlaybackRequiresUserGesture = false
             // window.open() goes to onCreateWindow, which refuses it: popups are blocked instead of replacing the page.
             setSupportMultipleWindows(true)
@@ -111,12 +115,35 @@ class MainActivity : Activity() {
         }
         CookieManager.getInstance().apply {
             setAcceptCookie(true)
-            setAcceptThirdPartyCookies(web, true)
+            setAcceptThirdPartyCookies(web, false)
         }
         web.setBackgroundColor(BG)
         web.isFocusable = true
         web.isFocusableInTouchMode = true
-        web.addJavascriptInterface(Bridge(), "TVApp")
+        // The legacy JavaScript bridge was visible to untrusted third-party video frames.
+        // Only the trusted main frame at the exact HTTPS origin can call these methods.
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
+            WebViewCompat.addWebMessageListener(
+                web, "TVNative", setOf("https://framextv.pro"),
+                WebViewCompat.WebMessageListener { _, message, origin, isMainFrame, _ ->
+                    if (!isMainFrame || origin.scheme != "https" || origin.host != "framextv.pro") {
+                        return@WebMessageListener
+                    }
+                    when (message.data) {
+                        "keyboard" -> runOnUiThread {
+                            web.requestFocus()
+                            (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager).showSoftInput(web, 0)
+                        }
+                        "playing:1" -> runOnUiThread {
+                            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                        }
+                        "playing:0" -> runOnUiThread {
+                            window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                        }
+                    }
+                }
+            )
+        }
 
         tvScript = assets.open("tv.js").bufferedReader().use { it.readText() }
         // Injecting into every frame lets the remote also control the video inside the embed iframes.
@@ -130,7 +157,8 @@ class MainActivity : Activity() {
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         val code = event.keyCode
         val down = event.action == KeyEvent.ACTION_DOWN
-        if (down && isRemoteOk(event)) lastRemoteOkAt = SystemClock.uptimeMillis()
+        // Signal the last actual remote OK to the trusted top document only.
+        if (down && isRemoteOk(event)) js("window.__lastNativeOk=Date.now()")
 
         if (code == KeyEvent.KEYCODE_BACK) {
             if (down && event.repeatCount == 0) handleBack()
@@ -227,8 +255,7 @@ class MainActivity : Activity() {
         super.onDestroy()
     }
 
-    private fun isOwnHost(host: String?) =
-        host != null && OWN_HOSTS.any { host == it || host.endsWith(".$it") }
+    private fun isOwnHost(host: String?) = host != null && OWN_HOSTS.any { it == host }
 
     private fun isAdHost(host: String?) =
         host != null && AD_HOSTS.any { host == it || host.endsWith(".$it") }
@@ -244,11 +271,14 @@ class MainActivity : Activity() {
         override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
             if (!request.isForMainFrame) return false
             val url = request.url
-            val web = url.scheme == "https" || url.scheme == "http"
-            return !(web && isOwnHost(url.host))
+            return !(url.scheme == "https" && isOwnHost(url.host))
         }
 
         override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
+            // Reject insecure cleartext resources from third-party players too.
+            if (request.url.scheme == "http") {
+                return WebResourceResponse("text/plain", "utf-8", ByteArrayInputStream(ByteArray(0)))
+            }
             if (!isAdHost(request.url.host) && !isUselessOnTv(request.url)) return null
             return WebResourceResponse("text/plain", "utf-8", ByteArrayInputStream(ByteArray(0)))
         }
@@ -264,7 +294,7 @@ class MainActivity : Activity() {
     }
 
     private fun showError(view: WebView, url: Uri, reason: String) {
-        val safeReason = reason.replace("<", "&lt;")
+        val safeReason = android.text.TextUtils.htmlEncode(reason)
         val html = """
             <html><body style="background:#09090b;color:#fff;font-family:sans-serif;display:flex;
             flex-direction:column;align-items:center;justify-content:center;height:100vh;margin:0">
@@ -300,22 +330,4 @@ class MainActivity : Activity() {
         override fun onPermissionRequest(request: PermissionRequest) = request.deny()
     }
 
-    /** Exposed to page scripts as window.TVApp. */
-    private inner class Bridge {
-        @JavascriptInterface
-        fun remoteOk(): Boolean = SystemClock.uptimeMillis() - lastRemoteOkAt < 600
-
-        @JavascriptInterface
-        fun showKeyboard() = runOnUiThread {
-            web.requestFocus()
-            (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager).showSoftInput(web, 0)
-        }
-
-        /** Keeps the projector from dimming / starting the screensaver while a video plays. */
-        @JavascriptInterface
-        fun playing(on: Boolean) = runOnUiThread {
-            if (on) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-            else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        }
-    }
 }
