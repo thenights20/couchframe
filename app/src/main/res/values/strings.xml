@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">FrameXTV para TV</string>
+    <string name="exit_hint">Pressione VOLTAR novamente para sair</string>
+</resources>

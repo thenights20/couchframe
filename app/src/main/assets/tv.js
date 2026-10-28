@@ -10,6 +10,54 @@
   var ARROWS = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right', Up: 'up', Down: 'down', Left: 'left', Right: 'right' };
   var CODES = { 38: 'up', 40: 'down', 37: 'left', 39: 'right' };
 
+  // Tradução cuidadosa apenas de rótulos curtos da interface principal.
+  // A tradução não modifica títulos de obras, sinopses nem conteúdo dos vídeos.
+  if (TOP) {
+    var PT_BR_LABELS = {"Home":"Início","Movies":"Filmes","TV Shows":"Séries","TV Series":"Séries","Series":"Séries","Anime":"Anime","Animes":"Animes","Search":"Buscar","Search movies and shows":"Buscar filmes e séries","Search movies, TV shows...":"Buscar filmes e séries...","Search titles...":"Buscar títulos...","Trending":"Em alta","Trending Now":"Em alta agora","Trending Today":"Em alta hoje","Popular":"Populares","Popular Movies":"Filmes populares","Popular TV Shows":"Séries populares","Top Rated":"Mais bem avaliados","Top 10":"Top 10","Top 10 This Week":"Top 10 da semana","Recently Added":"Adicionados recentemente","New Releases":"Lançamentos","New":"Novidades","Discover":"Explorar","Browse":"Explorar","Browse All":"Ver todos","See All":"Ver todos","View All":"Ver todos","Explore More":"Explorar mais","Watch":"Assistir","Watch Now":"Assistir agora","Play":"Reproduzir","Play Now":"Reproduzir agora","Resume":"Continuar","Continue Watching":"Continue assistindo","More Info":"Mais informações","Details":"Detalhes","My List":"Minha lista","Favorites":"Favoritos","Settings":"Configurações","Profile":"Perfil","Language":"Idioma","Sign In":"Entrar","Log In":"Entrar","Sign Up":"Cadastrar","Welcome":"Boas-vindas","Get Started":"Começar","Continue":"Continuar","Close":"Fechar","Cancel":"Cancelar","Back":"Voltar","Next":"Próximo","Previous":"Anterior","Episodes":"Episódios","Episode":"Episódio","Seasons":"Temporadas","Season":"Temporada","Subtitles":"Legendas","Audio":"Áudio","Quality":"Qualidade","Fullscreen":"Tela cheia","Loading...":"Carregando...","Load More":"Carregar mais","No results found":"Nenhum resultado encontrado","Try Again":"Tentar novamente","Retry":"Tentar novamente","Movies & TV Shows":"Filmes e séries","Recommended":"Recomendados","For You":"Para você","Action":"Ação","Comedy":"Comédia","Drama":"Drama","Horror":"Terror","Documentary":"Documentário","Animation":"Animação","Romance":"Romance","Family":"Família","Sci-Fi":"Ficção científica","Fantasy":"Fantasia","Thriller":"Suspense","Mystery":"Mistério"};
+    var ptBrTimer = null;
+    function translatePtBr() {
+      if (!document.documentElement) return;
+      document.documentElement.lang = 'pt-BR';
+      var labels = document.querySelectorAll(
+        'header a, header button, nav a, nav button, footer a, footer button, ' +
+        '[role="tab"], [role="menuitem"], [data-testid="discovery-rail"] h2, ' +
+        '[data-testid="discovery-rail"] h3, button, input[placeholder], ' +
+        'input[aria-label], [role="searchbox"]'
+      );
+      for (var n = 0; n < labels.length; n++) {
+        var el = labels[n];
+        if (el.tagName === 'INPUT') {
+          var placeholder = el.getAttribute('placeholder');
+          if (placeholder && PT_BR_LABELS[placeholder]) el.setAttribute('placeholder', PT_BR_LABELS[placeholder]);
+        }
+        var aria = el.getAttribute('aria-label');
+        if (aria && PT_BR_LABELS[aria]) el.setAttribute('aria-label', PT_BR_LABELS[aria]);
+        // Só altera rótulos que são texto puro: evita interferir com componentes React e players.
+        if (el.childNodes.length === 1 && el.firstChild.nodeType === 3) {
+          var original = el.textContent.trim();
+          if (PT_BR_LABELS[original]) el.textContent = PT_BR_LABELS[original];
+        }
+      }
+    }
+    function schedulePtBr() {
+      if (ptBrTimer !== null) return;
+      ptBrTimer = setTimeout(function () {
+        ptBrTimer = null;
+        translatePtBr();
+      }, 180);
+    }
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', function () {
+        translatePtBr();
+        new MutationObserver(schedulePtBr).observe(document.documentElement, { subtree: true, childList: true });
+      }, { once: true });
+    } else {
+      translatePtBr();
+      new MutationObserver(schedulePtBr).observe(document.documentElement, { subtree: true, childList: true });
+    }
+  }
+
+
   function dirOf(e) { return ARROWS[e.key] || CODES[e.keyCode]; }
   function isOk(e) { return e.key === 'Enter' || e.keyCode === 13; }
   function stop(e) { e.preventDefault(); e.stopImmediatePropagation(); }

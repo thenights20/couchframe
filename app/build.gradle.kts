@@ -14,8 +14,8 @@ android {
         applicationId = "dev.couchframe.private.tv"
         minSdk = 23
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 2
+        versionName = "1.1.0-ptbr"
     }
 
     // Release signing key lives outside git: keystore.properties (storeFile, storePassword, keyAlias, keyPassword).

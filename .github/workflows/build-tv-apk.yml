@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -28,6 +28,8 @@ jobs:
           ! grep -q 'window.TVApp' app/src/main/assets/tv.js
           grep -q 'https://framextv.pro/' app/src/main/java/com/couchframe/tv/MainActivity.kt
           grep -q 'setAcceptThirdPartyCookies(web, false)' app/src/main/java/com/couchframe/tv/MainActivity.kt
+          grep -q 'Pressione VOLTAR novamente' app/src/main/res/values/strings.xml
+          grep -q 'Não foi possível acessar o FrameXTV' app/src/main/java/com/couchframe/tv/MainActivity.kt
 
       - name: Set up JDK
         uses: actions/setup-java@v4
@@ -67,13 +69,22 @@ jobs:
           ! grep -q 'android.accessibilityservice' apk-manifest.txt
           sha256sum "$APK" > apk-sha256.txt
 
-      - name: Upload test APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: couchframe-tv-test-apk
-          path: |
-            app/build/outputs/apk/debug/app-debug.apk
-            apk-sha256.txt
-            apk-manifest.txt
-          retention-days: 7
-          if-no-files-found: error
+      - name: Prepare APK for direct download
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp app/build/outputs/apk/debug/app-debug.apk FrameXTV-para-TV-pt-BR.apk
+          sha256sum FrameXTV-para-TV-pt-BR.apk > FrameXTV-para-TV-pt-BR.apk.sha256
+
+      - name: Publish direct APK download
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="v1.1.${GITHUB_RUN_NUMBER}-ptbr"
+          gh release create "$TAG" \
+            "FrameXTV-para-TV-pt-BR.apk" \
+            "FrameXTV-para-TV-pt-BR.apk.sha256" \
+            --title "FrameXTV para TV — Português do Brasil ($TAG)" \
+            --notes "APK de teste para Android TV/Google TV, pronto para baixar diretamente. Sem permissão de Acessibilidade. O conteúdo do site FrameXTV é externo e pode permanecer em inglês. Esta versão usa assinatura de depuração, que pode variar entre builds; ao atualizar pode ser necessário desinstalar a versão antiga. Não desative o Play Protect."

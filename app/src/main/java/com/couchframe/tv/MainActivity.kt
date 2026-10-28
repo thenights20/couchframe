@@ -32,6 +32,7 @@ import android.widget.Toast
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
 import java.io.ByteArrayInputStream
+import java.util.Locale
 
 private const val HOME = "https://framextv.pro/"
 private const val BG = 0xFF09090B.toInt()
@@ -68,19 +69,21 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Define o idioma preferencial para solicitações da WebView neste processo.
+        Locale.setDefault(Locale.forLanguageTag("pt-BR"))
         root = FrameLayout(this).apply { setBackgroundColor(BG) }
         web = WebView(this)
         root.addView(web, MATCH_PARENT, MATCH_PARENT)
         setContentView(root)
         hideSystemBars()
         setupWebView()
-        web.loadUrl(startUrl(intent) ?: HOME)
+        web.loadUrl(startUrl(intent) ?: HOME, mapOf("Accept-Language" to "pt-BR,pt;q=0.9"))
         web.requestFocus()
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        startUrl(intent)?.let { web.loadUrl(it) }
+        startUrl(intent)?.let { web.loadUrl(it, mapOf("Accept-Language" to "pt-BR,pt;q=0.9")) }
     }
 
     /** A framextv link passed in the launch intent (e.g. `adb shell am start -d <url>`). */
@@ -204,7 +207,7 @@ class MainActivity : Activity() {
                 if (now - lastBackAt < 2000) finish()
                 else {
                     lastBackAt = now
-                    Toast.makeText(this, "Press BACK again to exit", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, getString(R.string.exit_hint), Toast.LENGTH_SHORT).show()
                 }
             }
         }
@@ -289,18 +292,18 @@ class MainActivity : Activity() {
         }
 
         override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
-            if (request.isForMainFrame) showError(view, request.url, error.description.toString())
+            if (request.isForMainFrame) showError(view, request.url, "Confira sua conexão com a internet e tente novamente.")
         }
     }
 
     private fun showError(view: WebView, url: Uri, reason: String) {
         val safeReason = android.text.TextUtils.htmlEncode(reason)
         val html = """
-            <html><body style="background:#09090b;color:#fff;font-family:sans-serif;display:flex;
+            <html lang="pt-BR"><body style="background:#09090b;color:#fff;font-family:sans-serif;display:flex;
             flex-direction:column;align-items:center;justify-content:center;height:100vh;margin:0">
-            <h2>Can't reach frameXTV</h2><p style="color:#a1a1aa">$safeReason</p>
+            <h2>Não foi possível acessar o FrameXTV</h2><p style="color:#a1a1aa">$safeReason</p>
             <button id="r" autofocus style="font-size:20px;padding:12px 32px;border-radius:8px;border:0;
-            background:#e50914;color:#fff" onclick="location.href='$HOME'">Retry</button>
+            background:#e50914;color:#fff" onclick="location.href='$HOME'">Tentar novamente</button>
             <script>document.getElementById('r').focus()</script></body></html>
         """.trimIndent()
         view.loadDataWithBaseURL(HOME, html, "text/html", "utf-8", url.toString())
