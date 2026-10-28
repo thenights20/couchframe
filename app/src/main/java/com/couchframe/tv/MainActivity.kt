@@ -4,11 +4,17 @@ import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.Intent
 import android.graphics.Bitmap
+import android.graphics.Color
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.os.Message
 import android.os.SystemClock
+import android.view.Gravity
 import android.view.KeyCharacterMap
 import android.view.KeyEvent
 import android.view.View
@@ -27,6 +33,8 @@ import android.webkit.WebView
 import android.webkit.WebSettings
 import android.webkit.WebViewClient
 import android.widget.FrameLayout
+import android.widget.TextView
+import org.json.JSONObject
 import android.widget.Toast
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
@@ -58,6 +66,11 @@ class MainActivity : Activity() {
 
     private lateinit var root: FrameLayout
     private lateinit var web: WebView
+    private lateinit var playbackInfo: TextView
+    private val uiHandler = Handler(Looper.getMainLooper())
+    private val hideInfo = Runnable { playbackInfo.visibility = View.GONE }
+    private var activePlaybackId: String? = null
+    private var playbackInfoStarted = 0L
     private lateinit var tvScript: String
     private var injectAtStart = false
 
@@ -73,6 +86,22 @@ class MainActivity : Activity() {
         root = FrameLayout(this).apply { setBackgroundColor(BG) }
         web = WebView(this)
         root.addView(web, MATCH_PARENT, MATCH_PARENT)
+        playbackInfo = TextView(this).apply {
+            setTextColor(Color.WHITE)
+            textSize = 17f
+            typeface = Typeface.DEFAULT_BOLD
+            setPadding(dp(20), dp(14), dp(20), dp(14))
+            background = GradientDrawable().apply {
+                setColor(0xE0151820.toInt())
+                cornerRadius = dp(14).toFloat()
+            }
+            visibility = View.GONE
+            isFocusable = false
+            isClickable = false
+        }
+        root.addView(playbackInfo, FrameLayout.LayoutParams(
+            MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.TOP
+        ).apply { setMargins(dp(40), dp(24), dp(40), 0) })
         setContentView(root)
         hideSystemBars()
         setupWebView()
@@ -89,6 +118,36 @@ class MainActivity : Activity() {
     private fun startUrl(intent: Intent?): String? {
         val uri = intent?.data ?: return null
         return if (uri.scheme == "https" && isOwnHost(uri.host)) uri.toString() else null
+    }
+
+    private fun dp(value: Int): Int = (value * resources.displayMetrics.density + 0.5f).toInt()
+
+    private fun showPlaybackInfo(json: String) {
+        try {
+            val info = JSONObject(json)
+            val id = info.optString("id").take(70)
+            if (id.isBlank()) return
+            val now = SystemClock.uptimeMillis()
+            if (activePlaybackId != id) {
+                activePlaybackId = id
+                playbackInfoStarted = now
+            }
+            val remain = 10000L - (now - playbackInfoStarted)
+            if (remain <= 0L) return
+            fun safe(field: String): String = info.optString(field, "Não informado")
+                .take(80)
+                .replace("\n", " ")
+                .replace("\r", " ")
+            playbackInfo.text = "RESOLUÇÃO: ${safe("resolution")}\n" +
+                "ÁUDIO: ${safe("audio")}\n" +
+                "LEGENDAS: ${safe("subtitles")}"
+            playbackInfo.visibility = View.VISIBLE
+            root.bringChildToFront(playbackInfo)
+            uiHandler.removeCallbacks(hideInfo)
+            uiHandler.postDelayed(hideInfo, remain)
+        } catch (_: Exception) {
+            // Dados de metadados não confiáveis de players incorporados são ignorados.
+        }
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -129,7 +188,11 @@ class MainActivity : Activity() {
                     if (!isMainFrame || origin.scheme != "https" || origin.host != "framextv.pro") {
                         return@WebMessageListener
                     }
-                    when (message.data) {
+                    val payload = message.data
+                    if (payload != null && payload.startsWith("playback:") && payload.length <= 800) {
+                        runOnUiThread { showPlaybackInfo(payload.removePrefix("playback:")) }
+                    }
+                    when (payload) {
                         "keyboard" -> runOnUiThread {
                             web.requestFocus()
                             (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager).showSoftInput(web, 0)
@@ -250,6 +313,7 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy() {
+        uiHandler.removeCallbacks(hideInfo)
         root.removeView(web)
         web.destroy()
         super.onDestroy()
@@ -317,6 +381,7 @@ class MainActivity : Activity() {
             customView = view
             customCallback = callback
             root.addView(view, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
+            root.bringChildToFront(playbackInfo)
             view.isFocusable = true
             view.requestFocus()
             hideSystemBars()

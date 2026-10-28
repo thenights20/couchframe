@@ -114,6 +114,221 @@
 
   // ---------------------------------------------------------------- video
 
+  // ------------------------------------------------------------- preferências de reprodução
+  // Aplicadas somente quando o player disponibiliza seleção por faixas/controles web.
+  // Não se altera URLs de mídia e não se tenta contornar DRM ou controles do provedor.
+  var playStates = new WeakMap();
+  var playbackPreference = {
+    maximumQuality: true,
+    brazilianAudio: true,
+    portugueseSubtitlesFallback: true,
+    infoDurationMs: 10000
+  };
+
+  function ptScore(s) {
+    s = String(s || '').toLowerCase().replace(/[_–—]/g, '-').trim();
+    if (/(?:^|[^a-z])pt-br(?:$|[^a-z])|portugu[eê]s.{0,15}brasil|brazilian.{0,12}portuguese|dublado.{0,10}brasil/.test(s)) return 2;
+    if (/(?:^|[^a-z])pt(?:$|[^a-z])|portugu[eê]s|portuguese/.test(s)) return 1;
+    return 0;
+  }
+
+  function languageName(track) {
+    if (!track) return 'Não informado';
+    var code = String(track.language || track.lang || '').toLowerCase().replace('_', '-');
+    if (code === 'pt-br') return 'Português (Brasil)';
+    if (code === 'pt' || code.startsWith('pt-')) return code === 'pt-pt' ? 'Português (Portugal)' : 'Português';
+    if (code.startsWith('en')) return 'Inglês';
+    if (code.startsWith('es')) return 'Espanhol';
+    if (code.startsWith('ja')) return 'Japonês';
+    var label = String(track.label || '').trim();
+    return label ? label.slice(0, 65) : code ? code.slice(0, 30) : 'Não informado';
+  }
+
+  function trackList(list) {
+    var tracks = [];
+    try { for (var i = 0; list && i < list.length; i++) if (list[i]) tracks.push(list[i]); }
+    catch (_) {}
+    return tracks;
+  }
+
+  function selectTracks(v) {
+    var audio = trackList(v.audioTracks);
+    var subtitles = trackList(v.textTracks).filter(function(t) {
+      return t.kind === 'subtitles' || t.kind === 'captions';
+    });
+    var activeAudio = audio.find(function(t) { return !!t.enabled; }) || null;
+    if (playbackPreference.brazilianAudio && audio.length) {
+      var wanted = audio.reduce(function(best, t) {
+        return ptScore(t.language + ' ' + t.label) > ptScore(best && (best.language + ' ' + best.label))
+          ? t : best;
+      }, null);
+      if (wanted && ptScore(wanted.language + ' ' + wanted.label)) {
+        try {
+          audio.forEach(function(t) { t.enabled = (t === wanted); });
+          activeAudio = audio.find(function(t) { return !!t.enabled; }) || activeAudio;
+        } catch (_) {}
+      }
+    }
+
+    var audiblePt = activeAudio && ptScore(activeAudio.language + ' ' + activeAudio.label) > 0;
+    var activeText = subtitles.find(function(t) { return t.mode === 'showing'; }) || null;
+    if (playbackPreference.portugueseSubtitlesFallback && !audiblePt && subtitles.length) {
+      var candidate = subtitles.reduce(function(best, t) {
+        return ptScore(t.language + ' ' + t.label) > ptScore(best && (best.language + ' ' + best.label))
+          ? t : best;
+      }, null);
+      if (candidate && ptScore(candidate.language + ' ' + candidate.label)) {
+        try {
+          subtitles.forEach(function(t) { t.mode = (t === candidate) ? 'showing' : 'disabled'; });
+          activeText = subtitles.find(function(t) { return t.mode === 'showing'; }) || activeText;
+        } catch (_) {}
+      }
+    } else if (audiblePt && activeText && ptScore(activeText.language + ' ' + activeText.label)) {
+      // Se houver dublagem PT, desligar apenas legendas PT ativadas automaticamente por este app.
+      var state = playStates.get(v);
+      if (state && state.autoSubtitle === activeText) {
+        try { activeText.mode = 'disabled'; activeText = null; } catch (_) {}
+      }
+    }
+    var state = playStates.get(v);
+    if (state && !audiblePt && activeText && ptScore(activeText.language + ' ' + activeText.label)) {
+      state.autoSubtitle = activeText;
+    }
+    return {audio: languageName(activeAudio), subtitles: activeText ? languageName(activeText) : (subtitles.length ? 'Desativadas' : 'Não identificadas')};
+  }
+
+  function qualityRank(label) {
+    var s = String(label || '').toLowerCase();
+    if (/\b8k\b|4320p?/.test(s)) return 4320;
+    if (/\b4k\b|\buhd\b|2160p?/.test(s)) return 2160;
+    var m = s.match(/\b(1440|1080|720|576|480|360|240)p?\b/);
+    return m ? +m[1] : 0;
+  }
+
+  function selectNativeQuality(v, state) {
+    if (!playbackPreference.maximumQuality || state.qualityChosen) return;
+    state.qualityChosen = true;
+    // Controle de qualidade exposto como <select>. Não clicar às cegas nos menus externos.
+    var selectors = document.querySelectorAll('select');
+    for (var i = 0; i < selectors.length; i++) {
+      var el = selectors[i], name = ((el.name || '') + ' ' + (el.id || '') + ' ' + (el.getAttribute('aria-label') || '')).toLowerCase();
+      if (!/quality|qualidade|resolution|resolu[cç][aã]o/.test(name)) continue;
+      var best = null, rank = 0;
+      for (var j = 0; j < el.options.length; j++) {
+        var opt = el.options[j];
+        var score = qualityRank((opt.textContent || '') + ' ' + opt.value);
+        if (score > rank && !opt.disabled) { rank = score; best = opt; }
+      }
+      if (best && el.value !== best.value) {
+        try {
+          el.value = best.value;
+          el.dispatchEvent(new Event('input', {bubbles: true}));
+          el.dispatchEvent(new Event('change', {bubbles: true}));
+        } catch (_) {}
+      }
+    }
+    // HLS.js: apenas se o player publicar a instância e ela controlar este mesmo vídeo.
+    try {
+      var hls = window.hls || window.hlsPlayer;
+      if (hls && hls.media === v && hls.levels && hls.levels.length && typeof hls.currentLevel === 'number') {
+        var bestIdx = -1, bestScore = -1;
+        for (var k = 0; k < hls.levels.length; k++) {
+          var level = hls.levels[k], score = (+level.height || 0) * 100000 + (+level.bitrate || 0) / 1000;
+          if (score > bestScore) { bestScore = score; bestIdx = k; }
+        }
+        if (bestIdx >= 0) hls.currentLevel = bestIdx;
+      }
+    } catch (_) {}
+  }
+
+  function actualResolution(v) {
+    var w = v.videoWidth || 0, h = v.videoHeight || 0;
+    if (!w || !h) return 'Aguardando informação';
+    var largest = Math.max(w, h), smallest = Math.min(w, h);
+    var tier = largest >= 7680 || smallest >= 4320 ? '8K' :
+      largest >= 3840 || smallest >= 2160 ? '4K' :
+      smallest >= 1440 ? '1440p' : smallest >= 1080 ? '1080p' :
+      smallest >= 720 ? '720p' : smallest >= 480 ? '480p' : smallest + 'p';
+    return tier + ' (' + w + '×' + h + ')';
+  }
+
+  function playbackStatus(v, state) {
+    var tracks = selectTracks(v);
+    return {
+      id: state.id,
+      resolution: actualResolution(v),
+      audio: tracks.audio,
+      subtitles: tracks.subtitles
+    };
+  }
+
+  function sendPlaybackStatus(info) {
+    if (TOP) {
+      try {
+        if (window.TVNative && typeof window.TVNative.postMessage === 'function') {
+          window.TVNative.postMessage('playback:' + JSON.stringify(info));
+        }
+      } catch (_) {}
+    } else {
+      try { window.parent.postMessage({tvPlaybackStatus: info}, '*'); } catch (_) {}
+    }
+  }
+
+  function updatePlayback(v) {
+    var state = playStates.get(v);
+    if (!state || v.paused || v.ended) return;
+    selectNativeQuality(v, state);
+    if (Date.now() - state.started >= playbackPreference.infoDurationMs) return;
+    sendPlaybackStatus(playbackStatus(v, state));
+  }
+
+  function startPlayback(v) {
+    var state = playStates.get(v);
+    if (!state || state.ended) {
+      state = {
+        id: String(Date.now()) + '-' + Math.random().toString(36).slice(2),
+        started: Date.now(),
+        qualityChosen: false,
+        autoSubtitle: null,
+        ended: false
+      };
+      playStates.set(v, state);
+    }
+    updatePlayback(v);
+  }
+
+  function attachVideo(v) {
+    if (v.__tvPlaybackAttached) return;
+    v.__tvPlaybackAttached = true;
+    v.addEventListener('playing', function() { startPlayback(v); });
+    v.addEventListener('loadedmetadata', function() { startPlayback(v); });
+    v.addEventListener('resize', function() { updatePlayback(v); });
+    v.addEventListener('ended', function() {
+      var state = playStates.get(v);
+      if (state) state.ended = true;
+    });
+    try {
+      if (v.audioTracks && v.audioTracks.addEventListener) v.audioTracks.addEventListener('addtrack', function(){ updatePlayback(v); });
+      if (v.textTracks && v.textTracks.addEventListener) v.textTracks.addEventListener('addtrack', function(){ updatePlayback(v); });
+    } catch (_) {}
+    if (!v.paused && !v.ended) startPlayback(v);
+  }
+
+  function scanPlayback() {
+    var videos = document.querySelectorAll('video');
+    for (var i = 0; i < videos.length; i++) {
+      attachVideo(videos[i]);
+      if (!videos[i].paused && !videos[i].ended) updatePlayback(videos[i]);
+    }
+  }
+  document.addEventListener('playing', function(ev) {
+    if (ev.target && ev.target.tagName === 'VIDEO') startPlayback(ev.target);
+  }, true);
+  setInterval(scanPlayback, 1000);
+  if (document.readyState !== 'loading') scanPlayback();
+  else document.addEventListener('DOMContentLoaded', scanPlayback, {once: true});
+
+
   function bestVideo() {
     var vs = document.getElementsByTagName('video'), best = null, bestA = -1;
     for (var i = 0; i < vs.length; i++) {
@@ -630,6 +845,16 @@
     // Ignore messages not received from the embedding parent or a known child frame.
     if (TOP && ev.source !== window && !childFrame(ev.source)) return;
     if (!TOP && ev.source !== window.parent && !childFrame(ev.source)) return;
+    if (d.tvPlaybackStatus && childFrame(ev.source)) {
+      var info = d.tvPlaybackStatus;
+      if (info && typeof info === 'object' &&
+          typeof info.id === 'string' && info.id.length <= 70 &&
+          typeof info.resolution === 'string' && typeof info.audio === 'string' &&
+          typeof info.subtitles === 'string') {
+        if (TOP) sendPlaybackStatus(info);
+        else window.parent.postMessage({tvPlaybackStatus: info}, '*');
+      }
+    }
     if (d.tvMedia && !TOP && ev.source === window.parent) { media(d.tvMedia); relay(d); }
     if (d.tvKey && !TOP && ev.source === window.parent) handleKey(d.tvKey, d.rep, null);
     if (TOP && 'tvMenu' in d) menuFrame = d.tvMenu ? ev.source : (menuFrame === ev.source ? null : menuFrame);

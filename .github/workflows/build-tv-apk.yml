@@ -30,6 +30,10 @@ jobs:
           grep -q 'setAcceptThirdPartyCookies(web, false)' app/src/main/java/com/couchframe/tv/MainActivity.kt
           grep -q 'Pressione VOLTAR novamente' app/src/main/res/values/strings.xml
           grep -q 'Não foi possível acessar o FrameXTV' app/src/main/java/com/couchframe/tv/MainActivity.kt
+          grep -q 'maximumQuality: true' app/src/main/assets/tv.js
+          grep -q 'brazilianAudio: true' app/src/main/assets/tv.js
+          grep -q 'infoDurationMs: 10000' app/src/main/assets/tv.js
+          grep -q 'showPlaybackInfo' app/src/main/java/com/couchframe/tv/MainActivity.kt
 
       - name: Set up JDK
         uses: actions/setup-java@v4
@@ -53,7 +57,7 @@ jobs:
       - name: Cache Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Build debug APK
+      - name: Build release APK
         run: |
           chmod +x gradlew
           ./gradlew :app:assembleRelease --no-daemon --stacktrace
@@ -83,9 +87,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          TAG="v1.1.${GITHUB_RUN_NUMBER}-ptbr"
+          TAG="v1.2.${GITHUB_RUN_NUMBER}-ptbr"
           gh release create "$TAG" \
             "FrameXTV-para-TV-pt-BR.apk" \
             "FrameXTV-para-TV-pt-BR.apk.sha256" \
             --title "FrameXTV para TV — Português do Brasil ($TAG)" \
-            --notes "APK de teste para Android TV/Google TV, pronto para baixar diretamente. Sem permissão de Acessibilidade. O conteúdo do site FrameXTV é externo e pode permanecer em inglês. Esta versão usa assinatura de depuração, que pode variar entre builds; ao atualizar pode ser necessário desinstalar a versão antiga. Não desative o Play Protect."
+            --notes "APK de teste para Android TV/Google TV. Maior qualidade e áudio PT-BR priorizados quando o player permite. Se não houver áudio PT, tenta legenda PT; painel de resolução/áudio/legenda exibido nos primeiros 10 segundos, com dados detectáveis. A disponibilidade e a seleção dependem do player externo. Sem permissão de Acessibilidade. Assinatura de teste variável; talvez seja necessário desinstalar a versão anterior. Não desative o Play Protect."
