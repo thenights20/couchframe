@@ -35,6 +35,9 @@ jobs:
           grep -q 'infoDurationMs: 10000' app/src/main/assets/tv.js
           grep -q 'showPlaybackInfo' app/src/main/java/com/couchframe/tv/MainActivity.kt
 
+      - name: Check injected JavaScript syntax
+        run: node --check app/src/main/assets/tv.js
+
       - name: Set up JDK
         uses: actions/setup-java@v4
         with:

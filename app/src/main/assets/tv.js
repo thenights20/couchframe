@@ -181,6 +181,7 @@
         try {
           subtitles.forEach(function(t) { t.mode = (t === candidate) ? 'showing' : 'disabled'; });
           activeText = subtitles.find(function(t) { return t.mode === 'showing'; }) || activeText;
+          if (activeText === candidate && playStates.get(v)) playStates.get(v).autoSubtitle = candidate;
         } catch (_) {}
       }
     } else if (audiblePt && activeText && ptScore(activeText.language + ' ' + activeText.label)) {
@@ -189,10 +190,6 @@
       if (state && state.autoSubtitle === activeText) {
         try { activeText.mode = 'disabled'; activeText = null; } catch (_) {}
       }
-    }
-    var state = playStates.get(v);
-    if (state && !audiblePt && activeText && ptScore(activeText.language + ' ' + activeText.label)) {
-      state.autoSubtitle = activeText;
     }
     return {audio: languageName(activeAudio), subtitles: activeText ? languageName(activeText) : (subtitles.length ? 'Desativadas' : 'Não identificadas')};
   }
@@ -206,8 +203,8 @@
   }
 
   function selectNativeQuality(v, state) {
-    if (!playbackPreference.maximumQuality || state.qualityChosen) return;
-    state.qualityChosen = true;
+    if (!playbackPreference.maximumQuality || state.qualityChosen || state.qualityChecks >= 8) return;
+    state.qualityChecks++;
     // Controle de qualidade exposto como <select>. Não clicar às cegas nos menus externos.
     var selectors = document.querySelectorAll('select');
     for (var i = 0; i < selectors.length; i++) {
@@ -219,8 +216,10 @@
         var score = qualityRank((opt.textContent || '') + ' ' + opt.value);
         if (score > rank && !opt.disabled) { rank = score; best = opt; }
       }
-      if (best && el.value !== best.value) {
+      if (best) {
+        state.qualityChosen = true;
         try {
+          if (el.value === best.value) continue;
           el.value = best.value;
           el.dispatchEvent(new Event('input', {bubbles: true}));
           el.dispatchEvent(new Event('change', {bubbles: true}));
@@ -236,7 +235,10 @@
           var level = hls.levels[k], score = (+level.height || 0) * 100000 + (+level.bitrate || 0) / 1000;
           if (score > bestScore) { bestScore = score; bestIdx = k; }
         }
-        if (bestIdx >= 0) hls.currentLevel = bestIdx;
+        if (bestIdx >= 0) {
+          hls.currentLevel = bestIdx;
+          state.qualityChosen = true;
+        }
       }
     } catch (_) {}
   }
@@ -284,11 +286,13 @@
 
   function startPlayback(v) {
     var state = playStates.get(v);
-    if (!state || state.ended) {
+    if (!state || state.ended || (state.source && (v.currentSrc || v.src) && state.source !== (v.currentSrc || v.src))) {
       state = {
         id: String(Date.now()) + '-' + Math.random().toString(36).slice(2),
         started: Date.now(),
+        source: v.currentSrc || v.src || '',
         qualityChosen: false,
+        qualityChecks: 0,
         autoSubtitle: null,
         ended: false
       };
@@ -301,7 +305,9 @@
     if (v.__tvPlaybackAttached) return;
     v.__tvPlaybackAttached = true;
     v.addEventListener('playing', function() { startPlayback(v); });
-    v.addEventListener('loadedmetadata', function() { startPlayback(v); });
+    v.addEventListener('loadedmetadata', function() {
+      if (!v.paused && !v.ended) startPlayback(v);
+    });
     v.addEventListener('resize', function() { updatePlayback(v); });
     v.addEventListener('ended', function() {
       var state = playStates.get(v);
