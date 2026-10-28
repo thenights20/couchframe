@@ -139,7 +139,8 @@ class MainActivity : Activity() {
                 .replace("\n", " ")
                 .replace("\r", " ")
             playbackInfo.text = "RESOLUÇÃO: ${safe("resolution")}\n" +
-                "ÁUDIO: ${safe("audio")}\n" +
+                "ÁUDIO ATUAL: ${safe("audio")}\n" +
+                "IDIOMA ORIGINAL: ${safe("original")}\n" +
                 "LEGENDAS: ${safe("subtitles")}"
             playbackInfo.visibility = View.VISIBLE
             root.bringChildToFront(playbackInfo)

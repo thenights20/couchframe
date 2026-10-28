@@ -256,10 +256,22 @@
 
   function playbackStatus(v, state) {
     var tracks = selectTracks(v);
+    var audio = trackList(v.audioTracks);
+    var current = audio.find(function(t) { return !!t.enabled; });
+    var dubbed = current && /dublad|dubbed/i.test(String(current.label || ''));
+    var original = String(v.getAttribute('data-original-language') ||
+      v.getAttribute('data-original-lang') || '').trim();
+    if (!original) {
+      var source = audio.find(function(t) {
+        return /original/i.test(String(t.label || ''));
+      });
+      if (source) original = languageName(source);
+    }
     return {
       id: state.id,
       resolution: actualResolution(v),
-      audio: tracks.audio,
+      audio: tracks.audio + (dubbed ? ' (dublado)' : ''),
+      original: original ? original.slice(0, 50) : 'Não informado',
       subtitles: tracks.subtitles
     };
   }
@@ -856,7 +868,7 @@
       if (info && typeof info === 'object' &&
           typeof info.id === 'string' && info.id.length <= 70 &&
           typeof info.resolution === 'string' && typeof info.audio === 'string' &&
-          typeof info.subtitles === 'string') {
+          typeof info.original === 'string' && typeof info.subtitles === 'string') {
         if (TOP) sendPlaybackStatus(info);
         else window.parent.postMessage({tvPlaybackStatus: info}, '*');
       }
